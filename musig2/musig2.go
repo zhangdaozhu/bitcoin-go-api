@@ -12,9 +12,12 @@ import "C"
 import (
 	"encoding/hex"
 	"errors"
+	"log"
 	"strings"
 	"unsafe"
 )
+
+func main() {}
 
 // Just check if the result is hex string
 func verifyResult(result *C.char) (string, error) {
@@ -267,4 +270,53 @@ func GetUnsignedTx(tx string) (string, error) {
 	defer C.free(unsafe.Pointer(cTx))
 	result := C.get_unsigned_tx(cTx)
 	return verifyResult(result)
+}
+
+func GetSignMessage(privateKeyList []string, publicKeyList []string, sighash string) ([]string, error) {
+	var round1StateList []*C.State
+	var round1MsgList []string
+	for index, _ := range privateKeyList {
+		// 4. Get your own state
+		round1State := getStatus(index)
+
+		round1StateList = append(round1StateList, round1State)
+		// 5. Get your own first round of messages
+		round1Msg, err := GetRound1Msg(round1State)
+		if err != nil {
+			log.Fatal(err)
+		}
+		round1MsgList = append(round1MsgList, round1Msg)
+	}
+
+	var round2MsgList []string
+	for index, round1State := range round1StateList {
+		// 6. Collect the first round of messages from all current signers to
+		//    generate its own second round of messages and broadcast it
+		var signRound1MsgList []string
+		for msgIndex, msg := range round1MsgList {
+			if msgIndex != index {
+				println("msg ", msg)
+
+				signRound1MsgList = append(signRound1MsgList, msg)
+			}
+		}
+
+		round2Msg, err := GetRound2Msg(round1State, sighash, privateKeyList[index], publicKeyList, signRound1MsgList)
+		if err != nil {
+			log.Fatal(err)
+		}
+		println("sign ", round2Msg)
+		round2MsgList = append(round2MsgList, round2Msg)
+	}
+	return round2MsgList, nil
+}
+
+func getStatus(index int) *C.State {
+	if index == 1 {
+		round1StateStr := "{\"ephks\":[{\"keypair\":{\"public_key\":\"043965456b1ef44c8c2713c85094b7d9bbc39b51413d7290e30b243f5064e52952d782c239a444b70ecc85322c2110ae72fe58d7fbc0f208deb37bd338b709414f\",\"private_key\":\"76b837c75f4e9d0687bd6d380361813857bd6c475dd4513e0b21b1a1c3305f08\"}},{\"keypair\":{\"public_key\":\"04605849cc96bc22b5b0d8bd64a82a6636c07f21a7d5616abf5896d71c89078c5f08ab4ea167d613c892f89c9b9b3f539771a9e6b5d75911cf50f22acc88197047\",\"private_key\":\"15f347df2e6a09c4388568b320ffa9bcaa2caf6d3e2f5b8cbf5c3475f8858546\"}}]}"
+		return DecodeRound1State(round1StateStr)
+	} else {
+		round1StateStr := "{\"ephks\":[{\"keypair\":{\"public_key\":\"0484d95308b347e268612ed4b0d041df7722122df9577a0dd8b4c98aaab0d8fddbbed355160b30bf5134d887f60b9eaf2aa81cc14342c74ba246f6301a6e23831f\",\"private_key\":\"45f62f07fd47df76650e8cee1e187ab41bec7642e7a8efc5e661943a7b941552\"}},{\"keypair\":{\"public_key\":\"04c7a5ccfbfe6cdd33a1107378ff94cda935b2986cff3111f83b9cc42215e47728dc58ab260a94c3cfcc39af48c077bc677cacac95ed2bc7968bbe6fea3be8aa24\",\"private_key\":\"32598ae74c78bb8ec8f220461988d7b9503d66922426d9a2bd15572e5a260f20\"}}]}"
+		return DecodeRound1State(round1StateStr)
+	}
 }
